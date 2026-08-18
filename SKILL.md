@@ -1,6 +1,6 @@
 ---
 name: jianying-editor
-description: 剪映 (JianYing) AI自动化剪辑的高级封装 API (JyWrapper)，提供开箱即用的 Python 接口，支持录屏、素材导入、字幕生成、Web 动效合成及项目导出。全面适配 MacOS (Apple Silicon/Intel) 与 Windows，支持 v5.9+ (draft_info.json) 架构、工程自修复、智能配音字幕及录屏变焦。
+description: 剪映 (JianYing) AI自动化剪辑的高级封装 API (JyWrapper)，提供开箱即用的 Python 接口，支持录屏、素材导入、字幕生成、Web 动效合成及项目导出。全面适配 MacOS (Apple Silicon/Intel) 与 Windows，支持 v5.9+ (draft_info.json) 架构、v6+/v11.x 草稿解密/加密、字幕位置/样式/动画深度修改、工程自修复、智能配音字幕及录屏变焦。
 ---
 
 # JianYing Editor Skill
@@ -24,6 +24,152 @@ For generic editing requests, always follow the "Quick Edit Runtime Template" an
 3.  **配乐选择**：
     - **简单演示使用默认音乐**。实际项目，应优先检索并推荐 `data/cloud_music_library.csv` 中的相关曲目，或根据视频主题（如“科技”、“温暖”）进行关键词过滤。
     - 询问用户：“我发现了几首符合主题的云端音乐，要不要试试？（如：`Illuminate` - 科技感）”。
+
+## 📦 v6+/v11.x 草稿解密与字幕深度修改 (Draft Crypto & Subtitle Editing)
+
+剪映 6.0+ 对草稿主文件做了加密（`jianying_draft_encrypt_v2`），本 skill 提供完整解密/加密能力，支持**读取、修改、回写**现有草稿。
+
+### 工具：jy_draft_crypto.py
+
+位置：`<SKILL_ROOT>/scripts/jy_draft_crypto.py`
+
+**CLI 用法**：
+```bash
+# 解密草稿文件到明文 JSON
+python jy_draft_crypto.py -d encrypted_draft_content.json -o decrypted.json
+
+# 加密回写（自动 roundtrip 校验）
+python jy_draft_crypto.py -e decrypted.json -o encrypted_output.json
+
+# 自动探测剪映安装路径（支持多版本共存）
+python jy_draft_crypto.py -d draft_content.json  # 默认输出到同目录 .decrypted.json
+```
+
+**Python 库 API**（推荐）：
+```python
+import sys
+sys.path.insert(0, "<SKILL_ROOT>/scripts")
+from jy_draft_crypto import decrypt_json, encrypt_json, modify_draft
+
+# 解密为 Python 对象
+data = decrypt_json("D:/JianyingPro/Drafts/MyDraft/draft_content.json")
+
+# 直接修改内容（如字幕文本）
+data['materials']['texts'][0]['content'] = '{"text":"新内容"}'
+
+# 加密回写（自动 roundtrip 校验）
+encrypt_json(data, "D:/JianyingPro/Drafts/MyDraft/draft_content.json")
+
+# 或用 modify_draft 上下文管理器（自动解密→修改→加密）
+with modify_draft("draft_content.json") as data:
+    data['materials']['texts'][0]['content'] = '{"text":"新内容"}'
+# 退出时自动加密回写 + roundtrip 校验
+```
+
+**技术细节**：
+- 自动探测剪映安装路径（`D:\Program Files\JianyingPro\<版本>\videoeditor.dll`）
+- 使用剪映自带 `EncryptUtils::decrypt/encrypt/enable`（复用官方逻辑，不猜算法）
+- 加密前必须调用 `enable(true)`
+- 每次加密后自动做 roundtrip 校验（解密比对）
+- 支持 v11.2.0.14339（实测验证通过）
+
+---
+
+### ⚠️ v11.x 多时间线副本回滚机制（关键！）
+
+剪映 v11+ 的多时间线模式下，草稿存在 **5 处内容副本**，修改草稿必须同步所有位置，否则会被剪映覆盖回滚：
+
+```
+草稿根目录/
+├── draft_content.json              ← ① 根目录主文件
+├── draft_meta_info.json            ← meta（id 不能动，须与索引一致）
+├── Timelines/
+│   └── <timeline_id>/              ← ② 时间线副本（剪映实际读取源）
+│       ├── draft_content.json
+│       ├── .bak                   ← ③ 备份快照
+│       └── template-2.tmp         ← ④ 临时副本
+├── .backup/                        ← ⑤ .bak 快照目录（必须禁用）
+│   ├── *.restore.bak
+│   └── template.bak
+├── project.json                    ← 辅助文件（含 main_timeline_id）
+├── timeline_layout.json            ← 辅助文件（含 activeTimeline）
+└── draft_biz_config.json           ← 辅助文件（含 timeline 引用）
+```
+
+**修改草稿 5 步法（已实测验证）**：
+1. **剪映完全退出**（含托盘 `JianyingProTray.exe`）后操作
+2. 读取并修改根 `draft_content.json`
+3. **content.id 换新 UUID**（复制来的草稿 id 与源相同会导致冲突）
+4. **同步写入 5 处**：根文件 + `.bak` + `template-2.tmp` + `Timelines/<新id>/draft_content.json`（目录重命名）+ 副本内 `.bak`/`template-2.tmp`
+5. **禁用 `.backup` 目录**：改名为 `.backup.disabled_by_agent`（防止快照回滚）
+
+同步辅助文件：`project.json`（main_timeline_id）、`timeline_layout.json`（activeTimeline）、`draft_biz_config.json`（残留旧 id 清理）。
+
+---
+
+### 🎨 v11.2 字幕属性修改 Schema（实测确认）
+
+**位置/变换**：
+- `segment.clip.transform{x, y}` — 归一化坐标，单位 = 半个画布宽/高，y 负值 = 上方
+- `segment.clip.rotation` — 旋转角度（度，顺时针）
+- `segment.clip.scale{x, y}` — 缩放
+
+**样式（双层，必须同步改）**：
+- 素材级：`text_color`、`has_shadow`、`shadow_color/alpha/distance`、`border_width`、`font_path`
+- `content.styles[0]`（JSON 字符串）：`fill.content.solid.color`（[r,g,b] 归一化）、`size`、`shadows[0]`、`strokes[]`、`font.path/id`
+- `content` 和 `base_content` 为 JSON 字符串，改后需 `json.dumps` 回写且保持一致
+
+**描边 strokes**：
+```json
+[{
+  "content": {
+    "solid": {
+      "alpha": 1.0,
+      "color": [r, g, b]  // 归一化 0-1
+    }
+  },
+  "width": 0.08  // 描边宽度
+}]
+```
+
+**动画注入**：
+- 通过 `segment.extra_material_refs` 引用 `materials.material_animations` 条目 id
+- 动画条目格式（v11.2 实际格式）：
+```json
+{
+  "id": "uuid",
+  "type": "sticker_animation",
+  "animations": [{
+    "id": "resource_id",
+    "type": "in|out",
+    "duration": 微秒,
+    "path": "Cache/effect/<resource_id>/<hash>",
+    "resource_id": "...",
+    "third_resource_id": "0",
+    "source_platform": 1,
+    "name": "动画名",
+    "category_id": "ruchang|3341",
+    "category_name": "入场|出场",
+    "material_type": "sticker",
+    "request_id": "..."
+  }]
+}
+```
+- **path 必须指向本地已缓存资源**（`Cache\effect\<resource_id>\<hash>`），否则不渲染
+- pyJianYingDraft 的 animation.py 导出格式（带 `multi_language_current`/`platform`/`anim_adjust_params`、无 `path`）与 v11.2 实际格式**不同**，注入时须按真实格式改写
+
+**已验证可用文本动画资源**：
+| 动画名 | resource_id |
+|---|---|
+| 打字机I | 6724920249654710791 |
+| 渐显 | 6724916044072227332 |
+| 放大 | 6724919499042066958 |
+| 弹入 | 6887482184844710413 |
+| 缩小 | 6724921217721045515 |
+| 向上翻转 | 7194703971498332727 |
+| 渐隐（出场） | 6798320902548230669 |
+
+---
 
 ##  规则指南 (Rules)
 
@@ -101,6 +247,14 @@ Use these templates and scripts for complex tasks:
   python <SKILL_ROOT>/scripts/auto_exporter.py "DraftName" "output.mp4" --res 1080 --fps 60
   # For SRT only:
   python <SKILL_ROOT>/scripts/jy_wrapper.py export-srt --name "DraftName"
+  ```
+- **Draft Crypto (v6+/v11.x)**: 解密/加密/修改剪映加密草稿：
+  ```bash
+  # 解密草稿到明文 JSON
+  python <SKILL_ROOT>/scripts/jy_draft_crypto.py -d "D:/JianyingPro/Drafts/MyDraft/draft_content.json" -o decrypted.json
+  
+  # 加密回写（自动 roundtrip 校验）
+  python <SKILL_ROOT>/scripts/jy_draft_crypto.py -e decrypted.json -o encrypted.json
   ```
 - **Template Clone & Replacer**: 安全克隆模板并批量替换物料 (防止损坏原模板):
   ```bash
