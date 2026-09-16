@@ -7,7 +7,7 @@ description: Use when inspecting, decrypting, validating, cloning, applying an a
 
 This skill is the project-operation layer. It turns an explicit edit decision into a safe Jianying project change. It does not judge topic value, filler words, pauses, speaker roles, Q&A structure, or narrative quality.
 
-> **Install note:** install this skill as a directory named `jianying-editor` (must match frontmatter `name`). If the clone/repo is still called `jianying-editor-skill`, rename the folder to `jianying-editor` after clone. Sibling skills refer to it by skill name `jianying-editor`, not by GitHub repo folder name.
+> **Install note:** this skill directory is named `jianying-editor` and matches frontmatter `name`. If a clone/repo is still called `jianying-editor-skill`, rename the folder to `jianying-editor` after clone. Sibling skills refer to it by skill name `jianying-editor`.
 
 In the three-skill workflow, `jianying-rough-cut` owns content and subtitle alignment decisions, `jianying-packaging` owns visual/audio packaging decisions, and this skill owns draft access, execution, validation, and rollback. Visual/audio packaging (花字、上轨强调、音效、卡点) is owned by `jianying-packaging`; this skill only executes approved project mutations. Read-only probes may happen at any stage; writes require an approved upstream plan.
 
