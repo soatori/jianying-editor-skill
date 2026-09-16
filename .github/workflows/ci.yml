@@ -1,7 +1,4 @@
-# STALE: this config still names scripts/tests that were removed during
-# skill-ification. Runtime under test is scripts/jianying_project.py +
-# scripts/jy_draft_crypto.py + tests/test_jianying_project.py.
-# Deletion/rewrite of this CI config is deferred (review plan Deferred section).
+# Lint and test only the live skill runtime.
 name: CI
 
 on:
@@ -25,51 +22,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff black
 
       - name: Lint
         run: |
-          ruff check `
-            scripts/api_validator.py `
-            scripts/asset_search.py `
-            scripts/auto_exporter.py `
-            scripts/build_cloud_music_library.py `
-            scripts/cloud_manager.py `
-            scripts/universal_tts.py `
-            scripts/utils/cli_protocol.py `
-            scripts/utils/config.py `
-            scripts/utils/errors.py `
-            scripts/utils/logging_utils.py `
-            tests/test_wrapper.py `
-            tools/check_repo_hygiene.py `
-            tools/validate_data_schema.py
+          python -m compileall scripts/jianying_project.py scripts/jy_draft_crypto.py
 
       - name: Run unit tests
         run: |
-          python -m unittest -v
-        working-directory: tests
-
-      - name: Format check
-        run: |
-          black --check `
-            scripts/api_validator.py `
-            scripts/asset_search.py `
-            scripts/auto_exporter.py `
-            scripts/build_cloud_music_library.py `
-            scripts/cloud_manager.py `
-            scripts/universal_tts.py `
-            scripts/utils/cli_protocol.py `
-            scripts/utils/config.py `
-            scripts/utils/errors.py `
-            scripts/utils/logging_utils.py `
-            tests/test_wrapper.py `
-            tools/check_repo_hygiene.py `
-            tools/validate_data_schema.py
-
-      - name: Repo hygiene
-        run: |
-          python tools/check_repo_hygiene.py
-
-      - name: Data schema
-        run: |
-          python tools/validate_data_schema.py
+          python -m unittest discover -s tests -v

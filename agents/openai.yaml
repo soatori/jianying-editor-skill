@@ -1,4 +1,0 @@
-interface:
-  display_name: "Jianying Project Operations"
-  short_description: "Safely inspect and modify Jianying draft projects"
-  default_prompt: "Inspect this Jianying project, identify its layout and encryption, and perform only the requested timeline operation with backup and validation."

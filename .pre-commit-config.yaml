@@ -1,24 +1,18 @@
-# STALE: this config still names scripts/tests that were removed during
-# skill-ification. Runtime under test is scripts/jianying_project.py +
-# scripts/jy_draft_crypto.py + tests/test_jianying_project.py.
-# Deletion/rewrite of this CI config is deferred (review plan Deferred section).
+# Format/lint hooks for the live skill runtime only.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.2
     hooks:
       - id: ruff
         args: ["--fix"]
+        files: ^scripts/(jianying_project|jy_draft_crypto)\.py$
       - id: ruff-format
-
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
+        files: ^scripts/(jianying_project|jy_draft_crypto)\.py$
 
   - repo: local
     hooks:
-      - id: pytest-wrapper
-        name: pytest (wrapper quick suite)
-        entry: python -m pytest tests/test_wrapper.py -q
+      - id: unittest
+        name: unittest skill runtime
+        entry: python -m unittest discover -s tests -v
         language: system
         pass_filenames: false

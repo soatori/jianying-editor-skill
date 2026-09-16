@@ -25,9 +25,9 @@ In the three-skill workflow, `jianying-rough-cut` owns content and subtitle alig
 
 ## Canonical implementation
 
-Use `scripts/jianying_project.py` for existing-project inspection and mutation. `scripts/draft_inspector.py` is a compatibility CLI that delegates to it. `scripts/jy_draft_crypto.py` is the only encryption backend.
+Use `scripts/jianying_project.py` for existing-project inspection and mutation. `scripts/jy_draft_crypto.py` is the only encryption backend.
 
-Do not use older project-generation wrappers to modify an existing encrypted multi-timeline draft. They may remain for legacy draft creation, but they are not an alternate write path for this workflow.
+Do not use older project-generation wrappers to modify an existing encrypted multi-timeline draft. They are not an alternate write path for this workflow.
 
 ### Read-only commands
 
