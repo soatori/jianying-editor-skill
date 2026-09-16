@@ -1,170 +1,86 @@
 ---
 name: jianying-editor
-description: 剪映 (JianYing) AI自动化剪辑的高级封装 API (JyWrapper)，提供开箱即用的 Python 接口，支持录屏、素材导入、字幕生成、Web 动效合成及项目导出。全面适配 MacOS (Apple Silicon/Intel) 与 Windows，支持 v5.9+ (draft_info.json) 架构、工程自修复、智能配音字幕及录屏变焦。
+description: Reliably inspect, decrypt, normalize, modify, validate, and recover existing Jianying Pro draft projects across legacy single-draft and newer multi-timeline layouts. Use for project structure, timelines, tracks, segments, materials, time-range mapping, safe write-back, and rollback; do not use it to decide what spoken content should be cut.
 ---
 
-# JianYing Editor Skill
+# Jianying Project Operations
 
-Use this skill when the user wants to automate video editing, generate drafts, or manipulate media assets in JianYing Pro.
+This skill is the project-operation layer. It turns an explicit edit decision into a safe Jianying project change. It does not judge topic value, filler words, pauses, speaker roles, Q&A structure, or narrative quality.
 
-Agent execution playbook: [docs/agent-playbook.md](docs/agent-playbook.md)
-Minimal command SOP: [docs/minimal-command-sop.md](docs/minimal-command-sop.md)
-Natural language usage guide: [usage.md](usage.md)
-Draft inspector CLI:
-`python <SKILL_ROOT>/scripts/draft_inspector.py list --limit 20`
-`python <SKILL_ROOT>/scripts/draft_inspector.py summary --name "DraftName"`
-`python <SKILL_ROOT>/scripts/draft_inspector.py show --name "DraftName" --kind content --json`
-For generic editing requests, always follow the "Quick Edit Runtime Template" and "Acceptance Checklist" in that playbook.
+In the three-skill workflow, `jianying-rough-cut` owns content and subtitle alignment decisions, `jianying-packaging` owns visual/audio packaging decisions, and this skill owns draft access, execution, validation, and rollback. Read-only probes may happen at any stage; writes require an approved upstream plan.
 
-## 🚨 重要开发原则 (CRITICAL DEVELOPER RULES)
-1.  **脚本位置**：**禁止在 Skill 内部目录创建剪辑脚本**。所有的剪辑逻辑实现代码（`.py` 脚本）必须存放在用户当前项目的**根目录**（或子目录，如 `scripts/`），以保持 Skill 库的纯净和可移植性。
-2.  **版本与架构**：
-    - **双平台适配**：已全面支持 MacOS (路径探测/录屏) 与 Windows。
-    - **Auto-healing**：支持 v5.9+ (`draft_info.json`)。若草稿损坏或版本冲突，使用 `overwrite=True` 初始化 `JyProject` 可触发自动修复。
-3.  **配乐选择**：
-    - **简单演示使用默认音乐**。实际项目，应优先检索并推荐 `data/cloud_music_library.csv` 中的相关曲目，或根据视频主题（如“科技”、“温暖”）进行关键词过滤。
-    - 询问用户：“我发现了几首符合主题的云端音乐，要不要试试？（如：`Illuminate` - 科技感）”。
+## Required workflow
 
-##  规则指南 (Rules)
+1. Work from an explicit draft path whenever one is available. Never assume a fixed drive, user directory, Jianying version, or draft layout.
+2. Run `scripts/jianying_project.py probe <draft-path>` before reading or changing content.
+3. Read [references/architecture-and-versioning.md](references/architecture-and-versioning.md) when the layout, encryption mode, active timeline, or replica relationship is uncertain.
+4. Run `inspect`, `locate`, and `validate` before any mutation. Treat unknown schema features and unresolved material references as blockers to destructive edits.
+5. Keep the source timeline. Prefer cloning to a named timeline before applying cuts, subtitle alignment, or packaging unless the user explicitly requests an in-place edit.
+6. For mutations, follow [references/safe-mutation.md](references/safe-mutation.md). Do not edit while Jianying or its tray process may still own the project.
+7. Apply only the upstream decision. Do not infer content deletions, subtitle corrections, emphasis, template choice, or sound choice.
+8. Validate the in-memory result, write atomically to the observed associated replicas, decrypt/read back, and validate again.
+9. Report the affected timeline ID/name, replica manifest, backup location, files written, validation result, and rollback path.
 
-Read the individual rule files for specific tasks and constraints:
+## Canonical implementation
 
-- [rules/setup.md](rules/setup.md) - **Mandatory** initialization code for all scripts.
-- [rules/core.md](rules/core.md) - Core operations: Saving, Exporting, and Draft management.
-- [rules/cli.md](rules/cli.md) - CLI contracts and machine-readable output conventions.
-- [rules/media.md](rules/media.md) - Importing assets & **AI Video Analysis Optimization (30m/360p)**.
-- [rules/text.md](rules/text.md) - Adding Subtitles, Text, and Captions.
-- [rules/keyframes.md](rules/keyframes.md) - **Advanced**: Adding Keyframe animations.
-- [rules/effects.md](rules/effects.md) - Searching for and applying Filters, Effects, and Transitions.
-- [rules/recording.md](rules/recording.md) - **New**: Screen Recording & Smart Zoom automation.
-- [rules/web-vfx.md](rules/web-vfx.md) - Advanced: Web-to-Video generation.
-- [rules/generative.md](rules/generative.md) - Chain of Thought for generative editing.
-- [rules/audio-voice.md](rules/audio-voice.md) - **New**: TTS Voiceover & BGM sourcing.
+Use `scripts/jianying_project.py` for existing-project inspection and mutation. `scripts/draft_inspector.py` is a compatibility CLI that delegates to it. `scripts/jy_draft_crypto.py` is the only encryption backend.
 
-## 🎯 Agent Quick Routing
+Do not use older project-generation wrappers to modify an existing encrypted multi-timeline draft. They may remain for legacy draft creation, but they are not an alternate write path for this workflow.
 
-- 云端视频 + 云端音乐：`rules/media.md` + `rules/audio-voice.md` -> `examples/cloud_video_music_tts_demo.py`
-- 智能配音与字幕 (Script-to-Video)：`rules/text.md` + `rules/audio-voice.md` -> 核心 API `add_narrated_subtitles`
-- 旁白与字幕对齐：`rules/text.md` + `rules/audio-voice.md` -> `examples/cloud_video_music_tts_demo.py`
-- 录屏与智能变焦：`rules/recording.md` -> `tools/recording/recorder.py`
-- 批量导出/无头导出：`rules/core.md` + `rules/cli.md` -> `examples/robust_auto_export.py`
-- 影视解说生成：`rules/generative.md` -> `scripts/movie_commentary_builder.py`
+### Read-only commands
 
-## 📖 经典示例 (Examples)
-
-Refer to these for complete workflows:
-- [examples/my_first_vlog.py](examples/my_first_vlog.py) - A complete vlog creation demo with background music and animated text.
-- [examples/simple_clip_demo.py](examples/simple_clip_demo.py) - Quick-start tutorial for basic cutting and track management.
-- [examples/compound_clip_demo.py](examples/compound_clip_demo.py) - **New**: Professional nested project (Compound Clip) automation.
-- [examples/cloud_video_music_tts_demo.py](examples/cloud_video_music_tts_demo.py) - Cloud video + cloud BGM + TTS/subtitle alignment.
-- [examples/web_to_video_intro_demo.py](examples/web_to_video_intro_demo.py) - Web-to-Video intro demo (HTML animation -> timeline clip).
-- [examples/robust_auto_export.py](examples/robust_auto_export.py) - Stable export workflow and failure handling.
-- [examples/auto_exposure_align_demo.py](examples/auto_exposure_align_demo.py) - CV-assisted exposure alignment workflow.
-- [examples/video_transcribe_and_match.py](examples/video_transcribe_and_match.py) - **Advanced**: AI-driven workflow (Transcribe Video -> Match B-Roll via AI semantics -> Assemble Draft).
-
-## 🧠 提示词与集成工具 (Prompts & Integrated Tools)
-
-Use these templates and scripts for complex tasks:
-- **Asset Search**: Find filters, transitions, and animations by Chinese/English name:
-  ```bash
-  python <SKILL_ROOT>/scripts/asset_search.py "复古" -c filters
-  ```
-- **Movie Commentary Builder**: Generate 60s commentary videos from a storyboard JSON:
-  ```bash
-  python <SKILL_ROOT>/scripts/movie_commentary_builder.py --video "video.mp4" --json "storyboard.json"
-  ```
-- **Sync Native Assets**: Import your favorited/played BGM/Styles from JianYing App to the Skill:
-  ```bash
-  python <SKILL_ROOT>/scripts/sync_jy_assets.py
-  # Index cloud materials from your existing drafts
-  python <SKILL_ROOT>/scripts/build_cloud_music_library.py
-  python <SKILL_ROOT>/scripts/build_cloud_text_styles_library.py
-  ```
-- **README to Tutorial**: Convert a project's README.md into a full installation tutorial video script:
-  - Read prompt: `prompts/readme_to_tutorial.md`
-  - Inject content into `{{README_CONTENT}}` variable
-- **Screen Recorder & Smart Zoom**: Record your screen and auto-apply zoom keyframes:
-  ```bash
-  python <SKILL_ROOT>/tools/recording/recorder.py
-  # Web preview capture (high performance)
-  python <SKILL_ROOT>/scripts/web_recorder.py --url "http://localhost:3000" --duration 5
-  # Or apply zoom to existing video:
-  python <SKILL_ROOT>/scripts/jy_wrapper.py apply-zoom --name "Project" --video "v.mp4" --json "e.json"
-  ```
-- **Draft Inspector**: Examine draft structure and metadata (v5.9+ support):
-  ```bash
-  python <SKILL_ROOT>/scripts/draft_inspector.py list --limit 20
-  python <SKILL_ROOT>/scripts/draft_inspector.py summary --name "DraftName"
-  ```
-- **Auto Exporter**: Headless export of a draft to MP4/SRT:
-  ```bash
-  python <SKILL_ROOT>/scripts/auto_exporter.py "DraftName" "output.mp4" --res 1080 --fps 60
-  # For SRT only:
-  python <SKILL_ROOT>/scripts/jy_wrapper.py export-srt --name "DraftName"
-  ```
-- **Template Clone & Replacer**: 安全克隆模板并批量替换物料 (防止损坏原模板):
-  ```bash
-  # 克隆模板生成新项目
-  python <SKILL_ROOT>/scripts/jy_wrapper.py clone --template "酒店模板" --name "客户A_副本"
-  ```
-- **API Validator**: Run a quick diagnostic of your environment:
-  ```bash
-  python <SKILL_ROOT>/scripts/api_validator.py
-  ```
-
-## 🚀 快速开始示例
-
-```python
-import os
-import sys
-
-# 1. 环境初始化 (必须同步到脚本开头，支持 Win/Mac)
-current_dir = os.path.dirname(os.path.abspath(__file__))
-env_root = os.getenv("JY_SKILL_ROOT", "").strip()
-# 探测 Skill 路径 (支持 Antigravity, Trae, Claude 等)
-skill_root = next((p for p in [
-    env_root,
-    os.path.join(current_dir, ".agent", "skills", "jianying-editor"),
-    os.path.join(current_dir, ".trae", "skills", "jianying-editor"),
-    os.path.join(current_dir, ".claude", "skills", "jianying-editor"),
-    os.path.join(current_dir, "skills", "jianying-editor"),
-    os.path.abspath(".agent/skills/jianying-editor"),
-    os.path.abspath(".trae/skills/jianying-editor"),
-    os.path.abspath(".claude/skills/jianying-editor"),
-    os.path.abspath("skills/jianying-editor"),
-    os.path.dirname(current_dir)
-] if p and os.path.exists(os.path.join(p, "scripts", "jy_wrapper.py"))), None)
-
-if not skill_root: raise ImportError("Could not find jianying-editor skill root.")
-sys.path.insert(0, os.path.join(skill_root, "scripts"))
-from jy_wrapper import JyProject
-
-if __name__ == "__main__":
-    # 2. 初始化工程 (支持 v5.9+ 及自修复)
-    project = JyProject("New AI Video", overwrite=True)
-    assets_dir = os.path.join(skill_root, "assets")
-
-    # 3. 智能配音与字幕 (One-click Script-to-Video)
-    project.add_narrated_subtitles(
-        text="欢迎使用剪映自动化 Skill。这是一个全面适配 MacOS 的进阶版本。",
-        speaker="zh_female_xiaopengyou"
-    )
-
-    # 4. 导入额外素材
-    project.add_media_safe(os.path.join(assets_dir, "video.mp4"), "0s")
-    project.add_media_safe(os.path.join(assets_dir, "audio.mp3"), "0s", track_name="Audio")
-
-    # 5. 添加带动画的标题
-    project.add_text_simple("剪映自动化开启", start_time="1s", duration="3s", anim_in="复古打字机")
-
-    project.save()
+```powershell
+python scripts/jianying_project.py probe "<draft-path>"
+python scripts/jianying_project.py inspect "<draft-path>" --timeline active
+python scripts/jianying_project.py locate "<draft-path>" --timeline active --track-type text --start-us 767000 --tolerance-us 40000
+python scripts/jianying_project.py validate "<draft-path>" --timeline active
 ```
 
-## 🛠️ 初始化与项目规范 (Initialization & Project Rules)
+### Safe timeline operations
 
-在初始化 `JyProject` 时，请务必根据主视频素材的比例设置分辨率。**默认值为横屏 (1920x1080)**。
+```powershell
+python scripts/jianying_project.py clone-timeline "<draft-path>" --source active --name "rough-cut-copy" --activate
+python scripts/jianying_project.py rename-timeline "<draft-path>" --timeline "<id-or-name>" --name "new-name"
+python scripts/jianying_project.py apply-plan "<draft-path>" --timeline "<id-or-name>" --plan "decision-plan.json"
+python scripts/jianying_project.py apply-plan "<draft-path>" --timeline "<id-or-name>" --plan "decision-plan.json" --apply
+```
 
-### 🚨 脚本存放位置规范
-**禁止在 Skill 安装目录下创建你的业务剪辑脚本**。
-- **正确做法**：将你的剪辑 Python 脚本放在项目的根目录。
-- **原因**：Skill 目录应该只包含工具集源码，便于后续 `git pull` 升级。业务代码混入会导致版本管理混乱。
+`apply-plan` is dry-run by default; `--apply` is required to write. It accepts ordered keep blocks on the current target time axis. Deletion is represented by omitted ranges; reordering is represented by block order. It can ripple all tracks or an explicit track set. Read [references/operation-contract.md](references/operation-contract.md) before generating a plan.
+
+`locate` uses a default ±40ms tolerance so frame-quantized starts such as `766667µs` can be found from a rounded plan time. Exact segment, track, text, and time assertions should be combined whenever possible. Programmatic adapters should use `JianyingProject.resolve_locator()` and fail closed unless exactly one match remains.
+
+For subtitle alignment and packaging, the caller supplies a reviewed semantic plan. This skill resolves that plan against the saved draft and performs the transaction; it does not decide the corrected words, emphasis scope, template, motion, or sound family. Read [references/segment-location-and-timebase.md](references/segment-location-and-timebase.md) and [references/replica-manifest-and-transactions.md](references/replica-manifest-and-transactions.md).
+
+## Non-negotiable invariants
+
+- Detect plaintext versus encrypted data from file contents; never infer encryption from an app version number alone.
+- Detect the project layout from observed files and references; do not assume every version uses `draft_info.json`, root-only content, or `Timelines/`.
+- Missing `start` means zero only where Jianying's timerange convention permits it.
+- Preserve unknown fields. Modify the smallest known structure.
+- Do not change a content/timeline ID during an ordinary save.
+- Generate a new ID only for a new timeline or project object, and replace exact ID values rather than arbitrary string substrings.
+- Do not rename, delete, or disable Jianying recovery directories as a normal write step.
+- Discover a `ReplicaManifest` from observed files and decoded IDs. Never assume that a project has exactly three or five replicas, and never broadcast one timeline's content into every backup or timeline directory.
+- Use same-directory temporary files and atomic replacement. Never partially update a replica set without a rollback snapshot.
+- A successful write requires semantic validation and decoded read-back of every written replica. File bytes may differ because of encoding or normalization; decoded semantic content must agree.
+- `enable=false` is not a reliable hide operation. Preserve the source timeline and use a reviewed staging/clone policy when covered subtitles must be removed or covered.
+- Quantize or resolve time against the current saved timeline and use ±40ms tolerance; do not require rounded decimal timestamps to match exactly.
+
+## Validation scope
+
+Validation must cover, where present:
+
+- parse/decrypt success and stable round-trip;
+- timeline IDs, names, active/main references, and directory relationships;
+- track and segment shape;
+- non-negative timeranges, positive durations, and timeline bounds;
+- overlap policy per track;
+- material and extra-material references;
+- project duration versus segment ends;
+- agreement among confirmed replicas.
+
+For the normalized inspection model, read [references/normalized-model.md](references/normalized-model.md).
+
+## Boundary with content editing
+
+An upstream content-analysis skill may return `keep`, `delete`, `shorten`, `reorder`, or `review` decisions with source/target ranges. This skill checks whether those ranges can be represented safely and executes only approved operations. If a decision is ambiguous, low-confidence, or marked for review, do not apply it.
