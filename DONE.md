@@ -55,10 +55,22 @@ OK
 (empty)
 ```
 
-## Deferred (NOT executed)
+## Deferred (CLEARED 2026-09-16 — commit `92da20a`)
 
-All items in plan Deferred section remain untouched, including `assets/`, `data/`, `index.html`, `__pycache__`, `docs/images/donate/`, `agents/openai.yaml`, folder rename, and CI rewrite.
+Deleted product shell and compatibility wrappers:
+
+- `assets/**`, `data/*.csv`, `index.html`, `docs/images/donate/**`
+- orphan `scripts/core`, `scripts/utils`, `scripts/vendor` (pycache-only)
+- `scripts/jy_wrapper.py`, `scripts/draft_inspector.py`
+- `agents/openai.yaml`
+- `tools/recording` leftover
+
+Rewrote `.github/workflows/ci.yml` and `.pre-commit-config.yaml` to only cover `jianying_project.py` + `jy_draft_crypto.py` + `tests/`. SKILL.md no longer mentions `draft_inspector`.
+
+Still deferred: folder rename `jianying-editor-skill` → `jianying-editor` (coordinate with sibling skills).
+
+Post-clear validation: unittest **9 OK**; validate_skill PASS 0 errors / 1 folder-name warning; CLI usage smoke OK; tree size ~153 KB (was ~7 MB).
 
 ## Status for main
 
-**PLAN COMPLETE — 0 deletions, 9/9 tests green, docs/comments only.**
+**PHASE 1 complete (0 deletions). PHASE 2 deferred-clear complete — shell removed, tests green.**
