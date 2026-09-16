@@ -1,6 +1,6 @@
 ---
 name: jianying-editor
-description: Reliably inspect, decrypt, normalize, modify, validate, and recover existing Jianying Pro draft projects across legacy single-draft and newer multi-timeline layouts. Use for project structure, timelines, tracks, segments, materials, time-range mapping, safe write-back, and rollback; do not use it to decide what spoken content should be cut.
+description: Use when inspecting, decrypting, validating, cloning, applying an approved plan to, or rolling back an existing Jianying Pro / 剪映 draft (草稿), including multi-timeline layouts and encrypted drafts. Triggers: draft_content.json, apply-plan, clone timeline, rollback, encrypted draft, 多时间线, 安全写回, 字幕对齐计划应用, draft_info. Do NOT use to decide spoken-content cuts, create drafts from scratch, TTS, screen recording, asset search, or packaging decisions (花字/卡点); use jianying-rough-cut and jianying-packaging for those.
 ---
 
 # Jianying Project Operations
