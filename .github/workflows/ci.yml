@@ -1,3 +1,7 @@
+# STALE: this config still names scripts/tests that were removed during
+# skill-ification. Runtime under test is scripts/jianying_project.py +
+# scripts/jy_draft_crypto.py + tests/test_jianying_project.py.
+# Deletion/rewrite of this CI config is deferred (review plan Deferred section).
 name: CI
 
 on:
