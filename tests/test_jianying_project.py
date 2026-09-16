@@ -228,6 +228,17 @@ class MediaStageTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 stage_local_asset(draft, draft / "nope.mp4")
 
+    def test_stage_rejects_escaping_subdir(self):
+        from media_stage import MediaStageError, stage_local_asset
+
+        with tempfile.TemporaryDirectory() as directory:
+            draft = Path(directory) / "draft"
+            draft.mkdir()
+            external = Path(directory) / "x.mp4"
+            external.write_bytes(b"x")
+            with self.assertRaises(MediaStageError):
+                stage_local_asset(draft, external, subdir="../escape")
+
     def test_prepare_media_without_normalize_stages_source(self):
         from media_stage import prepare_media_for_draft
 

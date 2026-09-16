@@ -29,6 +29,15 @@ def is_inside_draft(draft_root: str | os.PathLike[str], media_path: str | os.Pat
         return False
 
 
+def _safe_subdir(subdir: str) -> str:
+    name = (subdir or "").strip().replace("\\", "/").strip("/")
+    if not name or name in {".", ".."} or name.startswith("../") or "/../" in f"/{name}/":
+        raise MediaStageError(f"Unsafe media subdir: {subdir!r}")
+    if Path(name).is_absolute() or (len(name) > 1 and name[1] == ":"):
+        raise MediaStageError(f"Unsafe media subdir: {subdir!r}")
+    return name
+
+
 def stage_local_asset(
     draft_root: str | os.PathLike[str],
     media_path: str | os.PathLike[str],
@@ -50,15 +59,23 @@ def stage_local_asset(
     if is_inside_draft(draft, src):
         return src
 
-    target_dir = draft / subdir
+    target_dir = (draft / _safe_subdir(subdir)).resolve()
+    draft_resolved = draft.resolve()
+    if not is_inside_draft(draft_resolved, target_dir):
+        raise MediaStageError(f"Staging directory escapes draft: {target_dir}")
     target_dir.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.md5(str(src).encode("utf-8")).hexdigest()
+    stat = src.stat()
+    digest = hashlib.md5(f"{src}|{stat.st_size}|{int(stat.st_mtime)}".encode("utf-8")).hexdigest()
     staged = target_dir / f"{digest}{src.suffix.lower()}"
-    if staged.exists() and staged.stat().st_size == src.stat().st_size:
+    if staged.exists() and staged.stat().st_size == stat.st_size:
         return staged
+    temp = staged.with_name(staged.name + ".tmp")
     try:
-        shutil.copy2(src, staged)
+        shutil.copy2(src, temp)
+        os.replace(temp, staged)
     except OSError as exc:
+        if temp.exists():
+            temp.unlink(missing_ok=True)
         raise MediaStageError(f"Failed to copy media into draft: {exc}") from exc
     return staged
 
@@ -78,7 +95,7 @@ def _is_cache_fresh(src: Path, dst: Path) -> bool:
         return False
 
 
-def _probe_video(input_path: Path) -> dict[str, Any]:
+def _probe_video(input_path: Path) -> dict[str, Any] | None:
     cmd = [
         "ffprobe", "-v", "error", "-select_streams", "v:0",
         "-show_entries", "stream=codec_name,width,height,pix_fmt",
@@ -87,19 +104,20 @@ def _probe_video(input_path: Path) -> dict[str, Any]:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
-        return {}
+        return None
     if proc.returncode != 0:
-        return {}
+        return None
     try:
         streams = json.loads(proc.stdout or "{}").get("streams", [])
     except json.JSONDecodeError:
-        return {}
-    return streams[0] if streams else {}
+        return None
+    return streams[0] if streams else None
 
 
 def should_normalize_video_for_jianying(input_path: str | os.PathLike[str]) -> bool:
+    """True when re-encode is required; False when already friendly or probe failed."""
     info = _probe_video(Path(input_path))
-    if not info:
+    if not isinstance(info, dict) or not info:
         return False
     width = int(info.get("width") or 0)
     height = int(info.get("height") or 0)
@@ -117,16 +135,20 @@ def normalize_video_for_jianying(
     input_path: str | os.PathLike[str],
     force: bool = False,
 ) -> Path | None:
-    """Return a Jianying-friendly MP4 path, or the source when no work is needed.
+    """Return a Jianying-friendly MP4 path, or the source when already OK.
 
     Needs ``ffmpeg`` and ``ffprobe`` on PATH. Returns None when tools are
-    missing and normalization is required, or when conversion fails.
+    missing, conversion fails, or a required re-encode cannot run.
     """
     src = Path(input_path).resolve()
     if not src.is_file():
         return None
-    if not force and not should_normalize_video_for_jianying(src):
-        return src
+    if not force:
+        probe = _probe_video(src)
+        if probe is None:
+            return None
+        if not should_normalize_video_for_jianying(src):
+            return src
 
     dst = _norm_output_path(src)
     if _is_cache_fresh(src, dst):
