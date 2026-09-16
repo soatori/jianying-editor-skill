@@ -2,7 +2,18 @@
 
 ## Current skill version
 
-See `VERSION` (currently **3.0.0**).
+See `VERSION` (currently **3.1.0**).
+
+## v3.1 — media staging helper
+
+Ported the useful subset of upstream `luoluoluo22/jianying-editor-skill` ~1.7.0
+media helpers without restoring the product shell:
+
+- `scripts/media_stage.py` — copy external media into `<draft>/materials/` and
+  optional H.264/yuv420p normalize via ffmpeg/ffprobe.
+- CLI: `stage-media` on `scripts/jianying_project.py`.
+
+Still out of scope: JyWrapper, TTS, auto-export, cloud libraries, recording.
 
 ## v3 — project-operations skill
 

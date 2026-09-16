@@ -1,6 +1,6 @@
 ---
 name: jianying-editor
-description: Use when inspecting, decrypting, validating, cloning, applying an approved plan to, or rolling back an existing Jianying Pro / 剪映 draft (草稿), including multi-timeline layouts and encrypted drafts. Triggers: draft_content.json, apply-plan, clone timeline, rollback, encrypted draft, 多时间线, 安全写回, 字幕对齐计划应用, draft_info. Do NOT use to decide spoken-content cuts, create drafts from scratch, TTS, screen recording, asset search, or packaging decisions (花字/卡点); use jianying-rough-cut and jianying-packaging for those.
+description: Use when inspecting, decrypting, validating, cloning, applying an approved plan to, or rolling back an existing Jianying Pro / 剪映 draft (草稿), including multi-timeline layouts and encrypted drafts. Triggers: draft_content.json, apply-plan, clone timeline, rollback, encrypted draft, 多时间线, 安全写回, 字幕对齐计划应用, draft_info. Do NOT use to decide spoken-content cuts, create drafts from scratch, TTS, screen recording, asset search, or packaging decisions (花字/卡点); use jianying-rough-cut and jianying-packaging for those. Optional stage-media only copies/normalizes files into an existing draft folder.
 ---
 
 # Jianying Project Operations
@@ -46,6 +46,15 @@ python scripts/jianying_project.py rename-timeline "<draft-path>" --timeline "<i
 python scripts/jianying_project.py apply-plan "<draft-path>" --timeline "<id-or-name>" --plan "decision-plan.json"
 python scripts/jianying_project.py apply-plan "<draft-path>" --timeline "<id-or-name>" --plan "decision-plan.json" --apply
 ```
+
+When a write needs an external media file that is not already inside the draft folder, stage it first so the project stays self-contained (macOS sandbox / Pro 5.9+ missing-media):
+
+```powershell
+python scripts/jianying_project.py stage-media "<draft-path>" --media "<absolute-media-path>"
+python scripts/jianying_project.py stage-media "<draft-path>" --media "<absolute-media-path>" --no-normalize
+```
+
+`stage-media` copies into `<draft>/materials/` (hash-named). Video may be re-encoded to H.264/yuv420p via ffmpeg when needed; pass `--no-normalize` to skip. This does not invent timeline segments — only prepare files that an approved write will reference.
 
 `apply-plan` is dry-run by default; `--apply` is required to write. It accepts ordered keep blocks on the current target time axis. Deletion is represented by omitted ranges; reordering is represented by block order. It can ripple all tracks or an explicit track set. Read [references/operation-contract.md](references/operation-contract.md) before generating a plan.
 

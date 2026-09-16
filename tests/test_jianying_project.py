@@ -193,5 +193,71 @@ class RuntimeTests(unittest.TestCase):
             self.assertTrue(result["ok"], result)
 
 
+class MediaStageTests(unittest.TestCase):
+    def test_stage_copies_external_file_into_draft(self):
+        from media_stage import is_inside_draft, stage_local_asset
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            draft = root / "draft"
+            draft.mkdir()
+            external = root / "clip.mp4"
+            external.write_bytes(b"fake-video")
+            staged = stage_local_asset(draft, external)
+            self.assertTrue(staged.is_file())
+            self.assertTrue(is_inside_draft(draft, staged))
+            self.assertEqual(staged.read_bytes(), b"fake-video")
+            self.assertEqual(staged.parent.name, "materials")
+
+    def test_stage_skips_when_already_inside_draft(self):
+        from media_stage import stage_local_asset
+
+        with tempfile.TemporaryDirectory() as directory:
+            draft = Path(directory)
+            media = draft / "materials" / "a.mp4"
+            media.parent.mkdir()
+            media.write_bytes(b"inside")
+            staged = stage_local_asset(draft, media)
+            self.assertEqual(staged, media.resolve())
+
+    def test_stage_missing_source_raises(self):
+        from media_stage import stage_local_asset
+
+        with tempfile.TemporaryDirectory() as directory:
+            draft = Path(directory)
+            with self.assertRaises(FileNotFoundError):
+                stage_local_asset(draft, draft / "nope.mp4")
+
+    def test_prepare_media_without_normalize_stages_source(self):
+        from media_stage import prepare_media_for_draft
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            draft = root / "draft"
+            draft.mkdir()
+            external = root / "b.wav"
+            external.write_bytes(b"RIFF")
+            report = prepare_media_for_draft(draft, external, normalize=False)
+            self.assertTrue(report["ok"] if "ok" in report else report["inside_draft"])
+            self.assertTrue(Path(report["staged_path"]).is_file())
+            self.assertFalse(report["normalized"])
+            self.assertEqual(report["note"], "normalize_disabled")
+
+    def test_cli_stage_media_entry(self):
+        from jianying_project import main
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            draft = root / "draft"
+            draft.mkdir()
+            external = root / "c.bin"
+            external.write_bytes(b"data")
+            code = main([
+                "stage-media", str(draft), "--media", str(external), "--no-normalize",
+            ])
+            self.assertEqual(code, 0)
+            self.assertTrue(any((draft / "materials").iterdir()))
+
+
 if __name__ == "__main__":
     unittest.main()

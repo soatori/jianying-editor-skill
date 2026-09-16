@@ -896,11 +896,32 @@ def build_parser() -> argparse.ArgumentParser:
     apply = sub.add_parser("apply-plan")
     apply.add_argument("draft"); apply.add_argument("--timeline", required=True); apply.add_argument("--plan", required=True)
     apply.add_argument("--apply", action="store_true", help="write changes; without this flag only dry-runs")
+    stage = sub.add_parser("stage-media", help="copy external media into the draft (optional normalize)")
+    stage.add_argument("draft")
+    stage.add_argument("--media", required=True, help="external media file to stage into the draft")
+    stage.add_argument("--subdir", default="materials")
+    stage.add_argument("--no-normalize", action="store_true", help="skip video re-encode before staging")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "stage-media":
+        from media_stage import MediaStageError, prepare_media_for_draft
+
+        try:
+            report = prepare_media_for_draft(
+                args.draft,
+                args.media,
+                normalize=not args.no_normalize,
+                subdir=args.subdir,
+            )
+            result = {"ok": True, **report}
+        except (MediaStageError, FileNotFoundError, OSError) as exc:
+            result = {"ok": False, "error": str(exc)}
+        _print(result)
+        return 0 if result.get("ok") else 1
+
     project = JianyingProject(args.draft, args.dll)
     if args.command == "probe":
         result = project.probe()
