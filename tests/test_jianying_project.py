@@ -8,7 +8,18 @@ import sys
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from jianying_project import JianyingProject, assemble_keep_blocks, validate_content
+from jianying_project import (
+    JianyingProject,
+    assemble_keep_blocks,
+    ensure_local_material_ids,
+    validate_content,
+)
+
+try:  # encryption backend needs Windows + an installed compatible Jianying build
+    from jy_draft_crypto import JyDraftCrypto
+    _CRYPTO = JyDraftCrypto()
+except Exception:  # pragma: no cover - environment dependent
+    _CRYPTO = None
 
 
 def content(timeline_id="T1"):
@@ -268,6 +279,76 @@ class MediaStageTests(unittest.TestCase):
             ])
             self.assertEqual(code, 0)
             self.assertTrue(any((draft / "materials").iterdir()))
+
+
+def content_with_media(timeline_id="T1"):
+    return {
+        "id": timeline_id,
+        "duration": 10_000_000,
+        "materials": {
+            "videos": [
+                {"id": "M1", "path": "materials\\raw_a.mp4"},
+                {"id": "M2", "path": "materials/raw_b.mp4", "local_material_id": "keepme"},
+            ],
+            "audios": [{"id": "A1", "path": "materials/voice_001.wav"}],
+            "texts": [{"id": "TXT1", "content": "x"}],
+        },
+        "tracks": [{
+            "id": "V1", "type": "video", "segments": [{
+                "id": "S1", "material_id": "M1",
+                "target_timerange": {"start": 0, "duration": 10_000_000},
+                "source_timerange": {"start": 0, "duration": 10_000_000},
+            }]
+        }],
+    }
+
+
+class LocalMaterialIdTests(unittest.TestCase):
+    def test_backfills_videos_and_audios_from_stem_and_preserves_existing(self):
+        value = content_with_media()
+        changed = ensure_local_material_ids(value)
+        self.assertEqual(changed, 2)
+        videos = value["materials"]["videos"]
+        self.assertEqual(videos[0]["local_material_id"], "raw_a")
+        self.assertEqual(videos[1]["local_material_id"], "keepme")  # existing preserved
+        self.assertEqual(value["materials"]["audios"][0]["local_material_id"], "voice_001")
+        self.assertNotIn("local_material_id", value["materials"]["texts"][0])  # non-target bucket
+
+    def test_skips_material_without_a_path(self):
+        value = {"materials": {"videos": [{"id": "M1"}]}}
+        self.assertEqual(ensure_local_material_ids(value), 0)
+        self.assertNotIn("local_material_id", value["materials"]["videos"][0])
+
+    def test_write_funnel_persists_backfilled_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Timelines" / "T1").mkdir(parents=True)
+            (root / "Timelines" / "project.json").write_text(json.dumps({
+                "main_timeline_id": "T1", "timelines": [{"id": "T1", "name": "one"}]
+            }), encoding="utf-8")
+            (root / "timeline_layout.json").write_text(json.dumps({"activeTimeline": "T1"}), encoding="utf-8")
+            raw = json.dumps(content_with_media()).encode()
+            (root / "draft_content.json").write_bytes(raw)
+            (root / "Timelines" / "T1" / "draft_content.json").write_bytes(raw)
+            project = JianyingProject(root)
+            project._assert_editor_closed = lambda: None
+            result = project.apply_plan("T1", {
+                "version": 1, "ripple": "all",
+                "keep_blocks": [{"start_us": 0, "end_us": 10_000_000}],
+            })
+            self.assertTrue(result["ok"])
+            written = project.decode(root / "Timelines" / "T1" / "draft_content.json").value
+            self.assertEqual(written["materials"]["videos"][0]["local_material_id"], "raw_a")
+            self.assertEqual(written["materials"]["videos"][1]["local_material_id"], "keepme")
+            self.assertEqual(written["materials"]["audios"][0]["local_material_id"], "voice_001")
+
+    @unittest.skipIf(_CRYPTO is None, "Jianying videoeditor.dll crypto backend unavailable")
+    def test_encrypted_round_trip_preserves_backfilled_id(self):
+        value = content_with_media()
+        self.assertGreater(ensure_local_material_ids(value), 0)
+        encrypted = _CRYPTO.encrypt_json(value)
+        self.assertNotEqual(encrypted[:1], b"{")  # really ciphertext
+        self.assertEqual(_CRYPTO.decrypt_json(encrypted), value)
 
 
 if __name__ == "__main__":

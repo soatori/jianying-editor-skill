@@ -1,5 +1,22 @@
 # Changelog
- 
+
+## v1.7.0+crypto-ops.1
+Merge of the fork's decryption / project-operations layer onto the upstream
+`luoluoluo22` v1.7.0 base (product generation kept intact).
+- **Decryption backend** `scripts/jy_draft_crypto.py`: ctypes calls into the
+  installed Jianying `videoeditor.dll` (`encrypt`/`decrypt`/`enable`) with a
+  mandatory decrypt round-trip before any write. Windows only.
+- **Operations CLI** `scripts/jianying_project.py`: `probe`/`inspect`/`locate`/
+  `validate`/`clone-timeline`/`rename-timeline`/`apply-plan`/`stage-media` over
+  hybrid `Timelines/` layouts and observed `ReplicaManifest`.
+- **Pro 5.9+ `local_material_id` backfill in the ops path**: `ensure_local_material_ids`
+  runs at the `_write_content` funnel so every write (apply-plan / clone) emits a
+  stable non-empty `local_material_id` from the staged file-name stem for video and
+  audio materials, matching the v1.7.0 product-layer fix. Materials with no `path`
+  are left untouched. `prepare_media_for_draft` now reports a suggested
+  `local_material_id`.
+- `references/*.md` (8) and `tests/test_jianying_project.py` (19 tests) ported.
+
 ## v1.7.0 - 2026-09-11
 - **Draft Self-containment & Media Missing Fix** (Contributed by @shaozheliu, #23):
   - Fixed JianYing Pro 5.9+ "media missing" error caused by empty `local_material_id` and external transient file cleanup.

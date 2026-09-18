@@ -578,6 +578,7 @@ class JianyingProject:
             shutil.copy2(backup / relative, target)
 
     def _write_content(self, timeline_id: str, value: dict[str, Any], include_root: bool = True) -> dict[str, Any]:
+        ensure_local_material_ids(value)
         targets = self.replica_paths(timeline_id, include_root_mirror=include_root)
         if not targets:
             raise ProjectError(f"No associated replicas found for timeline {timeline_id}")
@@ -724,6 +725,41 @@ def _material_ids(materials: Any) -> set[str]:
                     if isinstance(item, dict) and item.get("id"):
                         result.add(str(item["id"]))
     return result
+
+
+_LOCAL_ID_MATERIAL_BUCKETS = ("videos", "audios")
+
+
+def ensure_local_material_ids(value: dict[str, Any]) -> int:
+    """Backfill missing/empty ``local_material_id`` from the staged file name stem.
+
+    Jianying Pro 5.9+ reports a "media missing" error when a Video/Audio material
+    carries an empty ``local_material_id``. This mirrors upstream v1.7.0: derive a
+    stable, non-empty id from the file name stem so the project stays self
+    contained. Only absent or blank fields are filled; any existing value is
+    preserved. Returns the number of fields changed.
+    """
+    materials = value.get("materials")
+    if not isinstance(materials, dict):
+        return 0
+    changed = 0
+    for bucket in _LOCAL_ID_MATERIAL_BUCKETS:
+        items = materials.get(bucket)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("local_material_id") or "").strip():
+                continue
+            path = item.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            stem = os.path.splitext(os.path.basename(path.replace("\\", "/")))[0]
+            if stem:
+                item["local_material_id"] = stem
+                changed += 1
+    return changed
 
 
 def validate_content(value: dict[str, Any], expected_id: str | None = None) -> dict[str, Any]:

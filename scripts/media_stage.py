@@ -205,6 +205,7 @@ def prepare_media_for_draft(
     return {
         "source": str(src.resolve()),
         "staged_path": str(staged),
+        "local_material_id": Path(staged).stem,
         "inside_draft": is_inside_draft(draft_root, staged),
         "normalized": normalized,
         "note": report_note,
