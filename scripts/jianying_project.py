@@ -1009,5 +1009,23 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.get("ok", True) else 1
 
 
+def _hard_exit(code: int) -> None:
+    """Exit the CLI without DLL detach notifications.
+
+    ``videoeditor.dll`` buffers its bytenn/mobilecv2 startup banners in its own
+    CRT stdio and flushes them to stdout when the process detaches it, which
+    lands *after* our JSON and breaks strict whole-stream ``json.load``.
+    ``os._exit`` still runs CRT exit processing (DLL detach), so on Windows we
+    call ``TerminateProcess`` directly after flushing our own streams.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        import ctypes
+
+        ctypes.windll.kernel32.TerminateProcess(ctypes.c_void_p(-1), code)
+    os._exit(code)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    _hard_exit(main())

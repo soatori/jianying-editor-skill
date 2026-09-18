@@ -17,6 +17,11 @@
   (30s timeout, probe failure means "skip normalization").
 - Documented known trade-offs: `local_material_id` stem collisions, `MsvcString`
   per-call leak in the crypto backend.
+- **Clean CLI stdout**: script mode now flushes the JSON result and exits via
+  `TerminateProcess` (Windows) so `videoeditor.dll`'s buffered bytenn/mobilecv2
+  banners — flushed by its CRT on process-detach — can no longer appear after
+  the JSON; strict whole-stream `json.load` of `jianying_project.py`/
+  `jy_draft_crypto.py` output succeeds again (`operation-contract.md` updated).
 
 ## v1.7.0+crypto-ops.1
 Merge of the fork's decryption / project-operations layer onto the upstream

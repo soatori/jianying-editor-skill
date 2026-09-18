@@ -259,4 +259,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # See jianying_project._hard_exit: TerminateProcess skips videoeditor.dll
+    # detach so its buffered banners never leak into stdout after our JSON.
+    code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        ctypes.windll.kernel32.TerminateProcess(ctypes.c_void_p(-1), code)
+    os._exit(code)

@@ -23,4 +23,5 @@
 - This contract carries implementation ranges, not editorial reasoning.
 - Time assertions should be resolved against the saved draft with `locate` and a default ±40ms tolerance; rounded decimal seconds are not exact identifiers.
 - The write target is the associated `ReplicaManifest` discovered by `jianying-editor`, not a fixed number of filenames.
+- CLI stdout is exactly one JSON document: script mode flushes the result and exits via `TerminateProcess`, which skips `videoeditor.dll` detach notifications so its buffered bytenn/mobilecv2 banners never land after the JSON. Consumers that embed the runtime in-process (not script mode) should still parse with `json.JSONDecoder().raw_decode` as a belt-and-braces measure.
 - Subtitle-alignment and packaging plans are translated to current draft locators by an adapter. This contract does not authorize the editor to invent semantic or visual decisions.
