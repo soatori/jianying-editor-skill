@@ -49,6 +49,10 @@ python scripts/jianying_project.py stage-media "<draft-path>" --media "<absolute
 
 > 内容取舍（该删哪句、花字/卡点/音效选型）不在本层判断；`apply-plan` 只执行经上游评审的语义计划。
 
+## Upstream packaging contract
+
+When an approved packaging plan uses schema `1.2`, treat `source.final_subtitle_reference`, `comparison.remap_status`, group `layout`, and audio candidate/trim fields as execution inputs only. Do not choose semantic groups, templates, coordinates, or sounds in this layer. Resolve `X0/Y0` from the current final subtitle at runtime, require the plan's clone/source-preservation and pre-write-backup gates, then perform the existing probe → backup → clone → apply → decrypt/read-back → replica validation → rollback-report workflow. A missing subtitle reference, blocked/pending remap, ambiguous relative slot, unverified sound candidate, or unresolved leading silence is a stop-for-review condition.
+
 ## 🚨 重要开发原则 (CRITICAL DEVELOPER RULES)
 1.  **脚本位置**：**禁止在 Skill 内部目录创建剪辑脚本**。所有的剪辑逻辑实现代码（`.py` 脚本）必须存放在用户当前项目的**根目录**（或子目录，如 `scripts/`），以保持 Skill 库的纯净和可移植性。
 2.  **版本与架构**：
