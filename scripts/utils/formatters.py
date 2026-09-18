@@ -3,9 +3,27 @@ import functools
 import os
 import re
 import subprocess
+import sys
 from typing import Dict, List, Optional, Union
 
 DRAFT_CONTENT_FILENAMES = ("draft_info.json", "draft_content.json")
+
+
+def _force_utf8_output() -> None:
+    """Prevent UnicodeEncodeError when stdout is a piped GBK/cp1252 console.
+
+    Nearly every product script imports this module (via core mixins), so the
+    one-time reconfigure keeps emoji prints (``ℹ️``/``❌``/``⚠️``) from
+    crashing agent subprocess calls on Windows.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
+_force_utf8_output()
 
 
 def find_draft_content_path(draft_path: str) -> Optional[str]:

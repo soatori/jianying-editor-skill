@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -222,7 +223,14 @@ class JianyingProject:
         root = self.root / "draft_content.json"
         if root.is_file():
             decoded = self.decode(root)
-            if str(decoded.value.get("id") or timeline_id) == timeline_id:
+            content_id = str(decoded.value.get("id") or "")
+            if content_id == timeline_id:
+                return root
+            # Legacy single drafts may carry an empty content id; "legacy-root"
+            # is the only sanctioned alias (see timeline_entries). Matching an
+            # empty id against an arbitrary selector would fail open in hybrid
+            # layouts and could return the wrong timeline's content.
+            if not content_id and timeline_id == "legacy-root" and not self.project_index:
                 return root
         raise ProjectError(f"No primary content file found for timeline {timeline_id}")
 
@@ -742,6 +750,10 @@ def ensure_local_material_ids(value: dict[str, Any]) -> int:
     stable, non-empty id from the file name stem so the project stays self
     contained. Only absent or blank fields are filled; any existing value is
     preserved. Returns the number of fields changed.
+
+    Caveat (inherited from upstream): the stem of two same-named files in
+    different directories collides on one ``local_material_id``. Staging media
+    into the draft (md5-prefixed names) or renaming avoids this.
     """
     materials = value.get("materials")
     if not isinstance(materials, dict):
@@ -906,6 +918,13 @@ def assemble_keep_blocks(value: dict[str, Any], blocks: list[tuple[int, int]], r
 
 
 def _print(value: Any) -> None:
+    # GBK/cp1252 piped consoles crash on Chinese/emoji output; this CLI is
+    # normally invoked as a subprocess by an agent.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 

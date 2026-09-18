@@ -13,6 +13,7 @@ import glob
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -31,10 +32,6 @@ def _version_key(path: Path) -> tuple[int, ...]:
 
 
 def _candidate_roots() -> Iterable[Path]:
-    explicit = os.environ.get("JIANYING_VIDEOEDITOR_DLL")
-    if explicit:
-        yield Path(explicit)
-
     for variable in ("LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"):
         value = os.environ.get(variable)
         if value:
@@ -80,10 +77,23 @@ def _registry_candidates() -> Iterable[Path]:
 
 
 def find_jianying_dll() -> str:
-    """Return the newest discovered compatible DLL candidate path."""
+    """Return the newest discovered compatible DLL candidate path.
+
+    An explicitly set ``JIANYING_VIDEOEDITOR_DLL`` wins outright: it is meant
+    to pin a specific install and must not be outvoted by the version sort.
+    """
+
+    explicit = os.environ.get("JIANYING_VIDEOEDITOR_DLL", "").strip('"')
+    if explicit:
+        pinned = Path(explicit)
+        if not pinned.is_file():
+            raise RuntimeError(
+                f"JIANYING_VIDEOEDITOR_DLL points to a missing file: {explicit}"
+            )
+        return str(pinned.resolve())
 
     candidates: set[Path] = set()
-    for root in list(_candidate_roots()) + list(_registry_candidates() or []):
+    for root in list(_candidate_roots()) + list(_registry_candidates()):
         if root.name.lower() == "videoeditor.dll" and root.is_file():
             candidates.add(root.resolve())
             continue
@@ -104,7 +114,13 @@ def find_jianying_dll() -> str:
 
 
 class MsvcString(ctypes.Structure):
-    """MSVC x64 ``std::string`` layout used by the verified exports."""
+    """MSVC x64 ``std::string`` layout used by the verified exports.
+
+    Note: heap buffers returned by encrypt/decrypt are never freed (the DLL
+    does not export its ``~basic_string``), so each call leaks one allocation.
+    Acceptable for short-lived CLI processes; do not embed in long-running
+    loops without an upper bound.
+    """
 
     _fields_ = [
         ("_buf", ctypes.c_ubyte * 16),
@@ -217,6 +233,11 @@ def parse_plain_json(data: bytes) -> dict[str, Any] | None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--decrypt", metavar="PATH")

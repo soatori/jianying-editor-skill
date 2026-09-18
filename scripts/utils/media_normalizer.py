@@ -35,7 +35,14 @@ def _probe_video(input_path: str) -> dict:
         "json",
         input_path,
     ]
-    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        proc = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        # Missing/hung ffprobe: treat as "cannot inspect" so callers skip
+        # normalization instead of crashing the whole media import.
+        return {}
     if proc.returncode != 0:
         return {}
     try:

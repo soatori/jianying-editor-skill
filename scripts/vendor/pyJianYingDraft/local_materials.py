@@ -113,7 +113,7 @@ class VideoMaterial:
         self.path = path
         self.crop_settings = crop_settings
         # 剪映 v5.9+ 需要非空的本地素材登记 id；用文件名 stem 保证与素材文件一一对应，
-        # 且与 _stage_local_asset 复制的副本文件名（md5(源路径)）保持一致。
+        # 且与 media_stage.stage_local_asset 复制的副本文件名（md5(路径|大小|mtime)）保持一致。
         self.local_material_id = os.path.splitext(os.path.basename(self.path))[0]
 
         if not pymediainfo or not pymediainfo.MediaInfo.can_parse():

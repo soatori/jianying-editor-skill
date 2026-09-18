@@ -1,11 +1,10 @@
-import hashlib
 import os
-import shutil
 from typing import Union
 
 import pyJianYingDraft as draft
 from pyJianYingDraft import trange
 from pyJianYingDraft.exceptions import SegmentOverlap
+from media_stage import stage_local_asset
 from utils.formatters import get_duration_ffprobe_cached, safe_tim
 from utils.media_normalizer import normalize_video_for_jianying, normalize_webm_for_jianying
 
@@ -60,33 +59,15 @@ class MediaOpsMixin:
         2. 全平台 (Windows/macOS/Linux)：若素材在临时目录，源文件被清理会导致剪映 5.9+ 报“检测到媒体丢失”；
         复制进草稿目录可让工程自包含、路径永久稳定。
         若素材已在草稿目录内，则跳过复制。
+
+        实现统一委托给 scripts/media_stage.stage_local_asset（md5(path|size|mtime)
+        命名 + 原子替换），避免与操作层产生两份不同名的暂存副本。
         """
+        draft_dir = getattr(self, "draft_dir", "")
+        if not draft_dir:
+            return media_path
         try:
-            draft_dir = getattr(self, "draft_dir", "")
-            if not draft_dir:
-                return media_path
-
-            abs_media = os.path.abspath(media_path)
-            abs_draft = os.path.abspath(draft_dir)
-
-            try:
-                if os.path.commonpath([abs_draft, abs_media]) == abs_draft:
-                    return abs_media
-            except ValueError:
-                pass
-
-            target_dir = os.path.join(abs_draft, subdir)
-            os.makedirs(target_dir, exist_ok=True)
-
-            ext = os.path.splitext(abs_media)[1].lower()
-            digest = hashlib.md5(abs_media.encode("utf-8")).hexdigest()
-            staged = os.path.join(target_dir, f"{digest}{ext}")
-
-            if os.path.exists(staged) and os.path.getsize(staged) == os.path.getsize(abs_media):
-                return staged
-
-            shutil.copy2(abs_media, staged)
-            return staged
+            return str(stage_local_asset(draft_dir, media_path, subdir=subdir))
         except Exception as e:
             print(f"⚠️ 素材复制进草稿目录失败，回退使用源路径: {e}")
             return media_path

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased (PR #1 review fixes)
+- **Windows GBK consoles**: `utils.formatters` (imported by nearly every product
+  script) and the ops CLIs now reconfigure stdout/stderr to UTF-8 with
+  `errors="replace"`, so emoji/Chinese prints never raise `UnicodeEncodeError`
+  when invoked as a piped subprocess without `PYTHONUTF8=1`.
+- **Single staging implementation**: `MediaOpsMixin._stage_local_asset` delegates
+  to `media_stage.stage_local_asset` (`md5(path|size|mtime)` naming, atomic
+  replace). Removes the stale-copy hazard of the old size-only check and the
+  duplicate differently-named staged copies the two implementations produced.
+- `find_jianying_dll`: an explicit `JIANYING_VIDEOEDITOR_DLL` now short-circuits
+  the newest-version scan (and errors loudly if the pinned file is missing).
+- `content_path`: empty content ids only match the sanctioned `legacy-root`
+  alias in index-less layouts; no fail-open matching in hybrid drafts.
+- `_probe_video`: ffprobe missing/hanging no longer crashes media import
+  (30s timeout, probe failure means "skip normalization").
+- Documented known trade-offs: `local_material_id` stem collisions, `MsvcString`
+  per-call leak in the crypto backend.
+
 ## v1.7.0+crypto-ops.1
 Merge of the fork's decryption / project-operations layer onto the upstream
 `luoluoluo22` v1.7.0 base (product generation kept intact).
