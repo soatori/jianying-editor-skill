@@ -8,12 +8,12 @@ and Jianying Pro 5.9+, and optionally re-encode video to an H.264/yuv420p profil
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
+
+from utils import media_normalizer as _mn
 
 
 class MediaStageError(RuntimeError):
@@ -80,101 +80,24 @@ def stage_local_asset(
     return staged
 
 
-def _norm_output_path(input_path: Path) -> Path:
-    cache_dir = input_path.parent / "__jycache__"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir / f"{input_path.stem}.__jy_norm__.mp4"
-
-
-def _is_cache_fresh(src: Path, dst: Path) -> bool:
-    if not dst.is_file():
-        return False
-    try:
-        return dst.stat().st_mtime >= src.stat().st_mtime
-    except OSError:
-        return False
-
-
-def _probe_video(input_path: Path) -> dict[str, Any] | None:
-    cmd = [
-        "ffprobe", "-v", "error", "-select_streams", "v:0",
-        "-show_entries", "stream=codec_name,width,height,pix_fmt",
-        "-of", "json", str(input_path),
-    ]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    if proc.returncode != 0:
-        return None
-    try:
-        streams = json.loads(proc.stdout or "{}").get("streams", [])
-    except json.JSONDecodeError:
-        return None
-    return streams[0] if streams else None
-
-
-def should_normalize_video_for_jianying(input_path: str | os.PathLike[str]) -> bool:
-    """True when re-encode is required; False when already friendly or probe failed."""
-    info = _probe_video(Path(input_path))
-    if not isinstance(info, dict) or not info:
-        return False
-    width = int(info.get("width") or 0)
-    height = int(info.get("height") or 0)
-    return (
-        info.get("codec_name") != "h264"
-        or info.get("pix_fmt") != "yuv420p"
-        or width <= 0
-        or height <= 0
-        or width % 16 != 0
-        or height % 2 != 0
-    )
-
-
 def normalize_video_for_jianying(
     input_path: str | os.PathLike[str],
     force: bool = False,
 ) -> Path | None:
-    """Return a Jianying-friendly MP4 path, or the source when already OK.
+    """Path-returning wrapper over the shared ``utils.media_normalizer`` logic.
 
-    Needs ``ffmpeg`` and ``ffprobe`` on PATH. Returns None when tools are
-    missing, conversion fails, or a required re-encode cannot run.
+    Resolves the input first so the caller's "already compatible" equality holds,
+    and returns None when ffprobe/ffmpeg are unavailable so staging can fall back
+    to the source instead of raising.
     """
     src = Path(input_path).resolve()
     if not src.is_file():
         return None
-    if not force:
-        probe = _probe_video(src)
-        if probe is None:
-            return None
-        if not should_normalize_video_for_jianying(src):
-            return src
-
-    dst = _norm_output_path(src)
-    if _is_cache_fresh(src, dst):
-        return dst
-
-    cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(src),
-        "-map", "0:v:0", "-map", "0:a?",
-        "-vf",
-        "scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
-        "-r", "30",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-preset", "veryfast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k",
-        "-movflags", "+faststart",
-        str(dst),
-    ]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-    except (OSError, subprocess.TimeoutExpired):
+        out = _mn.normalize_video_for_jianying(str(src), force=force)
+    except (FileNotFoundError, OSError):
         return None
-    if proc.returncode != 0 or not dst.is_file():
-        return None
-    return dst
+    return Path(out).resolve() if out is not None else None
 
 
 def prepare_media_for_draft(

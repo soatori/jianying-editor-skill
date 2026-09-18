@@ -1,7 +1,6 @@
 import hashlib
 import os
 import shutil
-import sys
 from typing import Union
 
 import pyJianYingDraft as draft

@@ -254,11 +254,10 @@ class TestJyWrapper(unittest.TestCase):
         mocked_post.assert_called()
 
     def test_16_macos_media_staging_copies_into_draft_dir(self):
-        """测试 macOS 下素材会复制进草稿目录内部，避免剪映沙盒权限问题"""
+        """测试素材会复制进草稿目录内部，避免剪映沙盒权限及外部素材丢失问题"""
         p = JyProject("TestMacStage", drafts_root=self.test_output, overwrite=True)
 
-        with patch("core.media_ops.sys.platform", "darwin"):
-            staged = p._stage_media_for_jianying(self.test_media)
+        staged = p._stage_media_for_jianying(self.test_media)
 
         self.assertTrue(staged.startswith(os.path.join(p.draft_dir, "media")))
         self.assertTrue(os.path.exists(staged))

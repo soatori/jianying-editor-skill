@@ -578,7 +578,7 @@ class JianyingProject:
             shutil.copy2(backup / relative, target)
 
     def _write_content(self, timeline_id: str, value: dict[str, Any], include_root: bool = True) -> dict[str, Any]:
-        ensure_local_material_ids(value)
+        backfilled = ensure_local_material_ids(value)
         targets = self.replica_paths(timeline_id, include_root_mirror=include_root)
         if not targets:
             raise ProjectError(f"No associated replicas found for timeline {timeline_id}")
@@ -593,7 +593,11 @@ class JianyingProject:
         except Exception:
             self._restore_snapshot(backup, manifest)
             raise
-        return {"backup": str(backup), "files_written": [str(path) for path in targets]}
+        return {
+            "backup": str(backup),
+            "files_written": [str(path) for path in targets],
+            "local_material_ids_backfilled": backfilled,
+        }
 
     def rename_timeline(self, selector: str, name: str) -> dict[str, Any]:
         self._assert_editor_closed()
@@ -849,7 +853,7 @@ def assemble_keep_blocks(value: dict[str, Any], blocks: list[tuple[int, int]], r
                          track_ids: list[str]) -> dict[str, Any]:
     if ripple not in ("all", "tracks"):
         raise ProjectError("ripple must be 'all' or 'tracks'")
-    selected = set(str(value) for value in track_ids)
+    selected = {str(tid) for tid in track_ids}
     if ripple == "tracks" and not selected:
         raise ProjectError("track_ids are required when ripple='tracks'")
     result = copy.deepcopy(value)
