@@ -1,6 +1,6 @@
 ---
 name: jianying-editor
-description: 剪映 (JianYing) AI自动化剪辑的高级封装 API (JyWrapper)，提供开箱即用的 Python 接口，支持录屏、素材导入、字幕生成、Web 动效合成及项目导出。全面适配 MacOS (Apple Silicon/Intel) 与 Windows，支持 v5.9+ (draft_info.json) 架构、工程自修复、智能配音字幕及录屏变焦。
+description: 剪映 (JianYing) AI自动化剪辑的高级封装 API (JyWrapper)，提供开箱即用的 Python 接口，支持录屏、素材导入、字幕生成、Web 动效合成及项目导出。全面适配 MacOS (Apple Silicon/Intel) 与 Windows，支持 v5.9+ (draft_info.json) 架构、工程自修复、智能配音字幕及录屏变焦。除“从零生成草稿”外，还包含对已存在草稿的操作层：用 scripts/jianying_project.py + jy_draft_crypto.py 探测/解密/校验/克隆时间线/按批准计划安全写回/回滚已存在的明文或加密草稿（含 v6+/v11.x 由 videoeditor.dll 加密的 hybrid Timelines/ 布局）。触发词补充：draft_content.json、decrypt、encrypted draft、多时间线、安全写回、apply-plan、clone-timeline、rollback、replica、字幕对齐计划应用。
 ---
 
 # JianYing Editor Skill
@@ -15,6 +15,39 @@ Draft inspector CLI:
 `python <SKILL_ROOT>/scripts/draft_inspector.py summary --name "DraftName"`
 `python <SKILL_ROOT>/scripts/draft_inspector.py show --name "DraftName" --kind content --json`
 For generic editing requests, always follow the "Quick Edit Runtime Template" and "Acceptance Checklist" in that playbook.
+
+## 🔐 操作已存在的草稿（含加密草稿）/ Project-operations layer
+
+上面的 `JyWrapper`/`JyProject` 是**从零生成草稿**的产品层。要在**已存在的草稿**（尤其是被剪映运行时用 `videoeditor.dll` 加密成 hybrid `Timelines/` 布局的 v6+/v11.x 草稿）上做**只读探测**或**安全改动**，用操作层：`scripts/jianying_project.py`（解密后端 `scripts/jy_draft_crypto.py`，媒体暂存 `scripts/media_stage.py`）。二者互不替代：建片/配音/导出走产品层，改现存工程走操作层。
+
+只读命令：
+
+```powershell
+python scripts/jianying_project.py probe "<draft-path>"
+python scripts/jianying_project.py inspect "<draft-path>" --timeline active
+python scripts/jianying_project.py locate "<draft-path>" --timeline active --track-type text --start-us 767000 --tolerance-us 40000
+python scripts/jianying_project.py validate "<draft-path>" --timeline active
+```
+
+安全时间线操作 / 写回（`apply-plan` 默认 dry-run，需 `--apply` 才落盘）：
+
+```powershell
+python scripts/jianying_project.py clone-timeline "<draft-path>" --source active --name "rough-cut-copy" --activate
+python scripts/jianying_project.py rename-timeline "<draft-path>" --timeline "<id-or-name>" --name "new-name"
+python scripts/jianying_project.py apply-plan "<draft-path>" --timeline "<id-or-name>" --plan "decision-plan.json"
+python scripts/jianying_project.py apply-plan "<draft-path>" --timeline "<id-or-name>" --plan "decision-plan.json" --apply
+python scripts/jianying_project.py stage-media "<draft-path>" --media "<absolute-media-path>"
+```
+
+要点（详见下方 references）：
+- 明文 vs 加密**按文件内容判定**，不信版本号；解密直接调用本机已装剪映的 `videoeditor.dll` 导出，不猜测密码；加密前强制解密回读做往返校验。
+- 写回是**事务**：从观测文件发现 `ReplicaManifest`（勿假设固定 3/5 副本），同目录 temp 原子替换，写后逐副本解密回读并再次校验，保留回滚快照，报告受影响 timeline / 副本清单 / 备份路径 / 写盘文件 / 校验结果。
+- 保留未知字段，只改最小已知结构；普通保存不改 content/timeline ID，仅新时间线/新工程对象才生成新 ID 并精确替换。
+- 加密工程需 Windows + 兼容的已装剪映；找不到 DLL 时设 `JIANYING_VIDEOEDITOR_DLL` 指向 `videoeditor.dll`。
+
+深入文档：[references/architecture-and-versioning.md](references/architecture-and-versioning.md)、[references/safe-mutation.md](references/safe-mutation.md)、[references/replica-manifest-and-transactions.md](references/replica-manifest-and-transactions.md)、[references/segment-location-and-timebase.md](references/segment-location-and-timebase.md)、[references/operation-contract.md](references/operation-contract.md)、[references/normalized-model.md](references/normalized-model.md)、[references/audio-track-and-sfx.md](references/audio-track-and-sfx.md)、[references/huazi-combination-import.md](references/huazi-combination-import.md)。
+
+> 内容取舍（该删哪句、花字/卡点/音效选型）不在本层判断；`apply-plan` 只执行经上游评审的语义计划。
 
 ## 🚨 重要开发原则 (CRITICAL DEVELOPER RULES)
 1.  **脚本位置**：**禁止在 Skill 内部目录创建剪辑脚本**。所有的剪辑逻辑实现代码（`.py` 脚本）必须存放在用户当前项目的**根目录**（或子目录，如 `scripts/`），以保持 Skill 库的纯净和可移植性。
