@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -222,7 +223,14 @@ class JianyingProject:
         root = self.root / "draft_content.json"
         if root.is_file():
             decoded = self.decode(root)
-            if str(decoded.value.get("id") or timeline_id) == timeline_id:
+            content_id = str(decoded.value.get("id") or "")
+            if content_id == timeline_id:
+                return root
+            # Legacy single drafts may carry an empty content id; "legacy-root"
+            # is the only sanctioned alias (see timeline_entries). Matching an
+            # empty id against an arbitrary selector would fail open in hybrid
+            # layouts and could return the wrong timeline's content.
+            if not content_id and timeline_id == "legacy-root" and not self.project_index:
                 return root
         raise ProjectError(f"No primary content file found for timeline {timeline_id}")
 
@@ -578,6 +586,7 @@ class JianyingProject:
             shutil.copy2(backup / relative, target)
 
     def _write_content(self, timeline_id: str, value: dict[str, Any], include_root: bool = True) -> dict[str, Any]:
+        backfilled = ensure_local_material_ids(value)
         targets = self.replica_paths(timeline_id, include_root_mirror=include_root)
         if not targets:
             raise ProjectError(f"No associated replicas found for timeline {timeline_id}")
@@ -592,7 +601,11 @@ class JianyingProject:
         except Exception:
             self._restore_snapshot(backup, manifest)
             raise
-        return {"backup": str(backup), "files_written": [str(path) for path in targets]}
+        return {
+            "backup": str(backup),
+            "files_written": [str(path) for path in targets],
+            "local_material_ids_backfilled": backfilled,
+        }
 
     def rename_timeline(self, selector: str, name: str) -> dict[str, Any]:
         self._assert_editor_closed()
@@ -726,6 +739,45 @@ def _material_ids(materials: Any) -> set[str]:
     return result
 
 
+_LOCAL_ID_MATERIAL_BUCKETS = ("videos", "audios")
+
+
+def ensure_local_material_ids(value: dict[str, Any]) -> int:
+    """Backfill missing/empty ``local_material_id`` from the staged file name stem.
+
+    Jianying Pro 5.9+ reports a "media missing" error when a Video/Audio material
+    carries an empty ``local_material_id``. This mirrors upstream v1.7.0: derive a
+    stable, non-empty id from the file name stem so the project stays self
+    contained. Only absent or blank fields are filled; any existing value is
+    preserved. Returns the number of fields changed.
+
+    Caveat (inherited from upstream): the stem of two same-named files in
+    different directories collides on one ``local_material_id``. Staging media
+    into the draft (md5-prefixed names) or renaming avoids this.
+    """
+    materials = value.get("materials")
+    if not isinstance(materials, dict):
+        return 0
+    changed = 0
+    for bucket in _LOCAL_ID_MATERIAL_BUCKETS:
+        items = materials.get(bucket)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("local_material_id") or "").strip():
+                continue
+            path = item.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            stem = os.path.splitext(os.path.basename(path.replace("\\", "/")))[0]
+            if stem:
+                item["local_material_id"] = stem
+                changed += 1
+    return changed
+
+
 def validate_content(value: dict[str, Any], expected_id: str | None = None) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -813,7 +865,7 @@ def assemble_keep_blocks(value: dict[str, Any], blocks: list[tuple[int, int]], r
                          track_ids: list[str]) -> dict[str, Any]:
     if ripple not in ("all", "tracks"):
         raise ProjectError("ripple must be 'all' or 'tracks'")
-    selected = set(str(value) for value in track_ids)
+    selected = {str(tid) for tid in track_ids}
     if ripple == "tracks" and not selected:
         raise ProjectError("track_ids are required when ripple='tracks'")
     result = copy.deepcopy(value)
@@ -866,6 +918,13 @@ def assemble_keep_blocks(value: dict[str, Any], blocks: list[tuple[int, int]], r
 
 
 def _print(value: Any) -> None:
+    # GBK/cp1252 piped consoles crash on Chinese/emoji output; this CLI is
+    # normally invoked as a subprocess by an agent.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
@@ -950,5 +1009,23 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if result.get("ok", True) else 1
 
 
+def _hard_exit(code: int) -> None:
+    """Exit the CLI without DLL detach notifications.
+
+    ``videoeditor.dll`` buffers its bytenn/mobilecv2 startup banners in its own
+    CRT stdio and flushes them to stdout when the process detaches it, which
+    lands *after* our JSON and breaks strict whole-stream ``json.load``.
+    ``os._exit`` still runs CRT exit processing (DLL detach), so on Windows we
+    call ``TerminateProcess`` directly after flushing our own streams.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        import ctypes
+
+        ctypes.windll.kernel32.TerminateProcess(ctypes.c_void_p(-1), code)
+    os._exit(code)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    _hard_exit(main())
